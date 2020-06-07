@@ -1,6 +1,6 @@
 from pysat.formula import CNF
 from pysat.solvers import MinisatGH
-import numpy as np
+from ortools.sat.python import cp_model
 
 # for debugging, TODO: remove before submission
 import pdb
@@ -73,7 +73,6 @@ def solve_sudoku_SAT(sudoku, k):
     formula = CNF()
 
     num_rows = num_cols = num_values = k ** 2
-    num_clauses = 0
 
     # creates propositional variables indicated as unique positive integers
     def s(row, col, value):
@@ -96,7 +95,6 @@ def solve_sudoku_SAT(sudoku, k):
                 for value in range(1, num_values + 1):
                     clause.append(s(row, col, value))
             formula.append(clause)
-            num_clauses += 1
 
 
     # each value can appear at most once in every row
@@ -106,7 +104,6 @@ def solve_sudoku_SAT(sudoku, k):
                 for row2 in range(row1 + 1, num_rows):
                     clause = [-s(row1, col, value), -s(row2, col, value)]
                     formula.append(clause)
-                    num_clauses += 1
 
     # each value can appear at most once in every column
     for row in range(num_cols):
@@ -115,7 +112,6 @@ def solve_sudoku_SAT(sudoku, k):
                 for col2 in range(col1 + 1, num_cols):
                     clause = [-s(row, col1, value), -s(row, col2, value)]
                     formula.append(clause)
-                    num_clauses += 1
 
     # each value can appear at most once in every block
     for value in range(1, num_values + 1):
@@ -127,7 +123,6 @@ def solve_sudoku_SAT(sudoku, k):
                             clause = [-s(k*i + x, k*j + y, value),
                                       -s(k*i + x, k*j + y1, value)]
                             formula.append(clause)
-                            num_clauses += 1
 
     for value in range(1, num_values + 1):
         for i in range(k):
@@ -139,11 +134,11 @@ def solve_sudoku_SAT(sudoku, k):
                                 clause = [-s(k*i + x, k*j + y, value),
                                           -s(k*i + x1, k*j + l, value)]
                                 formula.append(clause)
-                                num_clauses += 1
 
     solver = MinisatGH()
     solver.append_formula(formula)
 
+    #TODO: add if statement for when answer==False!!!!
     answer = solver.solve()
 
     pos_lits = [value for value in solver.get_model() if value > 0]
@@ -167,7 +162,68 @@ def solve_sudoku_SAT(sudoku, k):
 ### Solver that uses CSP encoding
 ###
 def solve_sudoku_CSP(sudoku,k):
-    return None;
+
+    #TODO: add a propagation strategy
+
+    model = cp_model.CpModel()
+    vars = []
+    num_rows = num_cols = num_values = k ** 2
+
+    for row in range(num_rows):
+        row_vars = []
+        for col in range(num_cols):
+            if sudoku[row][col] != 0:
+                row_vars.append(model.NewIntVar(sudoku[row][col], sudoku[row][col], 'r{}c{}'.format(row, col)))
+                # vars[row][col] = model.NewIntVar(sudoku[row][col], sudoku[row][col],
+                #                                 'r{}c{}'.format(row, col))
+            else:
+                row_vars.append(model.NewIntVar(1, num_values, 'r{}c{}'.format(row, col)))
+                # vars[row][col] = model.NewIntVar(1, num_values,
+                #                             'r{}c{}'.format(row, col))
+
+        vars.append(row_vars)
+
+    # add constraints per..
+    #.. row
+    for row in range(num_rows):
+        model.AddAllDifferent(vars[row])
+
+    #.. column
+    for col in range(num_cols):
+        col_vars = []
+        for row in range(num_rows):
+            col_vars.append(vars[row][col])
+        model.AddAllDifferent(col_vars)
+
+    #.. block
+    for i1 in range(k):
+        for j1 in range(k):
+            block_vars = []
+            for i2 in range(k):
+                for j2 in range(k):
+                    row_index = i1 * k + i2
+                    col_index = j1 * k + j2
+
+                    block_vars.append(vars[row_index][col_index])
+            model.AddAllDifferent(block_vars)
+
+
+    solver = cp_model.CpSolver()
+    answer = solver.Solve(model)
+
+    if answer == cp_model.FEASIBLE:
+        for row in range(num_rows):
+            for col in range(num_cols):
+                if sudoku[row][col] == 0:
+                    sudoku[row][col] = solver.Value(vars[row][col])
+
+
+
+
+
+
+
+    return sudoku
 
 ###
 ### Solver that uses ASP encoding
