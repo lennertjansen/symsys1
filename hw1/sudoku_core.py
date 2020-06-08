@@ -169,43 +169,81 @@ def solve_sudoku_CSP(sudoku,k):
     vars = []
     num_rows = num_cols = num_values = k ** 2
 
+    # Nine-ary approach (OLD)
+    # for row in range(num_rows):
+    #     row_vars = []
+    #     for col in range(num_cols):
+    #         if sudoku[row][col] != 0:
+    #             row_vars.append(model.NewIntVar(sudoku[row][col], sudoku[row][col], 'r{}c{}'.format(row, col)))
+    #             # vars[row][col] = model.NewIntVar(sudoku[row][col], sudoku[row][col],
+    #             #                                 'r{}c{}'.format(row, col))
+    #         else:
+    #             row_vars.append(model.NewIntVar(1, num_values, 'r{}c{}'.format(row, col)))
+    #             # vars[row][col] = model.NewIntVar(1, num_values,
+    #             #                             'r{}c{}'.format(row, col))
+    #
+    #     vars.append(row_vars)
+
+    # New approach: binary approach, i.e., make binary variables s_rcv = I{entry_rc == v}
     for row in range(num_rows):
         row_vars = []
+
         for col in range(num_cols):
-            if sudoku[row][col] != 0:
-                row_vars.append(model.NewIntVar(sudoku[row][col], sudoku[row][col], 'r{}c{}'.format(row, col)))
-                # vars[row][col] = model.NewIntVar(sudoku[row][col], sudoku[row][col],
-                #                                 'r{}c{}'.format(row, col))
+            # if entry already given, set variable s_rcv to 1 for appropriate subscripts
+            entry_vars = []
+            if  sudoku[row][col] == 0:
+                for value in range(1, num_values + 1):
+                    entry_vars.append(model.NewBoolVar('r{}c{}v{}'.format(row, col, value)))
+                row_vars.append(entry_vars)
+
             else:
-                row_vars.append(model.NewIntVar(1, num_values, 'r{}c{}'.format(row, col)))
-                # vars[row][col] = model.NewIntVar(1, num_values,
-                #                             'r{}c{}'.format(row, col))
+                for value in range(1, num_values + 1):
+                    if sudoku[row][col] != value:
+                        entry_vars.append(model.NewIntVar(0, 0, 'r{}c{}v{}'.format(row, col, value)))
+                    else:
+                        entry_vars.append(model.NewIntVar(1, 1,'r{}c{}v{}'.format(row, col, value)))
+                row_vars.append(entry_vars)
 
         vars.append(row_vars)
 
-    # add constraints per..
-    #.. row
+    # every cell/entry must be filled with one value
     for row in range(num_rows):
-        model.AddAllDifferent(vars[row])
+        for col in range(num_cols):
+            model.Add(sum(vars[row][col]) == 1)
 
-    #.. column
+
+    # every value must appear once in every row
+    for row in range(num_rows):
+        for value_index in range(num_values):
+            value_occurence_per_row = []
+            for col in range(num_cols):
+                value_occurence_per_row.append(vars[row][col][value_index])
+            model.Add(sum(value_occurence_per_row) == 1)
+
+
+    # every value must appear once in every col
     for col in range(num_cols):
-        col_vars = []
-        for row in range(num_rows):
-            col_vars.append(vars[row][col])
-        model.AddAllDifferent(col_vars)
+        for value_index in range(num_values):
+            value_occurence_per_col = []
+            for row in range(num_rows):
+                value_occurence_per_col.append(vars[row][col][value_index])
+            model.Add(sum(value_occurence_per_col) == 1)
 
-    #.. block
+
+    # every value must appear once in every block
     for i1 in range(k):
         for j1 in range(k):
-            block_vars = []
-            for i2 in range(k):
-                for j2 in range(k):
-                    row_index = i1 * k + i2
-                    col_index = j1 * k + j2
+            for value_index in range(num_values):
+                value_occurence_per_block = []
 
-                    block_vars.append(vars[row_index][col_index])
-            model.AddAllDifferent(block_vars)
+                for i2 in range(k):
+                    for j2 in range(k):
+                        row_index = i1 * k + i2
+                        col_index = j1 * k + j2
+
+                        value_occurence_per_block.append(vars[row_index][col_index][value_index])
+
+                model.Add(sum(value_occurence_per_block) == 1)
 
 
     solver = cp_model.CpSolver()
@@ -215,7 +253,9 @@ def solve_sudoku_CSP(sudoku,k):
         for row in range(num_rows):
             for col in range(num_cols):
                 if sudoku[row][col] == 0:
-                    sudoku[row][col] = solver.Value(vars[row][col])
+                    for value_index in range(num_values):
+                        if solver.Value(vars[row][col][value_index]) == 1:
+                            sudoku[row][col] = value_index + 1
 
 
 
