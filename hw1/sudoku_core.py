@@ -2,6 +2,9 @@ from pysat.formula import CNF
 from pysat.solvers import MinisatGH
 from ortools.sat.python import cp_model
 
+import gurobipy as gp
+from gurobipy import GRB
+
 # for debugging, TODO: remove before submission
 import pdb
 
@@ -169,21 +172,6 @@ def solve_sudoku_CSP(sudoku,k):
     vars = []
     num_rows = num_cols = num_values = k ** 2
 
-    # Nine-ary approach (OLD)
-    # for row in range(num_rows):
-    #     row_vars = []
-    #     for col in range(num_cols):
-    #         if sudoku[row][col] != 0:
-    #             row_vars.append(model.NewIntVar(sudoku[row][col], sudoku[row][col], 'r{}c{}'.format(row, col)))
-    #             # vars[row][col] = model.NewIntVar(sudoku[row][col], sudoku[row][col],
-    #             #                                 'r{}c{}'.format(row, col))
-    #         else:
-    #             row_vars.append(model.NewIntVar(1, num_values, 'r{}c{}'.format(row, col)))
-    #             # vars[row][col] = model.NewIntVar(1, num_values,
-    #             #                             'r{}c{}'.format(row, col))
-    #
-    #     vars.append(row_vars)
-
     # New approach: binary approach, i.e., make binary variables s_rcv = I{entry_rc == v}
     for row in range(num_rows):
         row_vars = []
@@ -275,4 +263,82 @@ def solve_sudoku_ASP(sudoku,k):
 ### Solver that uses ILP encoding
 ###
 def solve_sudoku_ILP(sudoku,k):
-    return None;
+
+    model = gp.Model()
+    vars = []
+    num_rows = num_cols = num_values = k ** 2
+
+    # Make binary variables
+    for row in range(num_rows):
+        row_vars = []
+
+        for col in range(num_cols):
+
+            entry_vars = []
+            if sudoku[row][col] == 0:
+                for value in range(1, num_values + 1):
+                    entry_vars.append(model.addVar(vtype = GRB.BINARY,
+                    name = "r{}c{}v{}".format(row, col, value)))
+                row_vars.append(entry_vars)
+            else:
+                for value in range(1, num_values + 1):
+                    if sudoku[row][col] != value:
+                        entry_vars.append(model.addVar(vtype = GRB.INTEGER,
+                        lb = 0, ub = 0, name = "r{}c{}v{}".format(row, col, value)))
+                    else:
+                        entry_vars.append(model.addVar(vtype = GRB.INTEGER,
+                        lb = 1, ub = 1, name = "r{}c{}v{}".format(row, col, value)))
+                row_vars.append(entry_vars)
+        vars.append(row_vars)
+
+    # every entry must be filled with exactly one value
+    for row in range(num_rows):
+        for col in range(num_cols):
+            model.addConstr(gp.quicksum(vars[row][col]) == 1)
+
+    # row constraints
+    for row in range(num_rows):
+        for value_index in range(num_values):
+            value_occurence_per_row = []
+            for col in range(num_cols):
+                value_occurence_per_row.append(vars[row][col][value_index])
+            model.addConstr(gp.quicksum(value_occurence_per_row) == 1)
+
+    # column constraints
+    for col in range(num_cols):
+        for value_index in range(num_values):
+            value_occurence_per_col = []
+            for row in range(num_rows):
+                value_occurence_per_col.append(vars[row][col][value_index])
+            model.addConstr(gp.quicksum(value_occurence_per_col) == 1)
+
+    # block constraints
+    for i1 in range(k):
+        for j1 in range(k):
+            for value_index in range(num_values):
+                value_occurence_per_block = []
+
+                for i2 in range(k):
+                    for j2 in range(k):
+                        row_index = i1 * k + i2
+                        col_index = j1 * k + j2
+
+                        value_occurence_per_block.append(vars[row_index][col_index][value_index])
+                model.addConstr(gp.quicksum(value_occurence_per_block) == 1)
+
+
+    model.optimize()
+
+    if model.status == GRB.OPTIMAL:
+        for row in range(num_rows):
+            for col in range(num_cols):
+                if sudoku[row][col] == 0:
+                    for value_index in range(num_values):
+                        if vars[row][col][value_index].x == 1:
+                            sudoku[row][col] = value_index + 1
+
+
+
+
+
+    return sudoku;
