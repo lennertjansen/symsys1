@@ -1,18 +1,14 @@
 from pysat.formula import CNF
 from pysat.solvers import MinisatGH
 from ortools.sat.python import cp_model
-
 import gurobipy as gp
 from gurobipy import GRB
-
-# for debugging, TODO: remove before submission
-import pdb
+import clingo
 
 ###
 ### Propagation function to be used in the recursive sudoku solver
 ###
 def propagate(sudoku_possible_values, k):
-    # TODO: test how this function handles unsolvable input
     # simplest/naive propagation strategy: every time you encounter a single
     # possible value in a unit, remove it from all other possible values in the unit
 
@@ -26,7 +22,6 @@ def propagate(sudoku_possible_values, k):
 
     # column-wise removal of lone singles
     for col_index in range(k ** 2):
-        # TODO: see if you can speed this up, this seems excessive
         certain_col_values = []
         for row_index in range(k ** 2):
             if len(sudoku_possible_values[row_index][col_index]) == 1:
@@ -67,11 +62,6 @@ def propagate(sudoku_possible_values, k):
 ### Solver that uses SAT encoding
 ###
 def solve_sudoku_SAT(sudoku, k):
-
-    # General scheme of computations:
-    # 1) take in put x (i.e., sudoku) and encode in CNF (in=sudoku --> out=CNF formula phi)
-    # 2) feed CNF/formula into SAT solver (in=phi --> out=satisfiable (bool), truth assignment alpha)
-    # 3) if satisfiable: extract/decode sudoku solution from alpha - else: return input sudoku / error
 
     formula = CNF()
 
@@ -141,7 +131,6 @@ def solve_sudoku_SAT(sudoku, k):
     solver = MinisatGH()
     solver.append_formula(formula)
 
-    #TODO: add if statement for when answer==False!!!!
     answer = solver.solve()
 
     pos_lits = [value for value in solver.get_model() if value > 0]
@@ -154,11 +143,6 @@ def solve_sudoku_SAT(sudoku, k):
             count += 1
 
 
-
-
-
-
-
     return sudoku
 
 ###
@@ -166,13 +150,11 @@ def solve_sudoku_SAT(sudoku, k):
 ###
 def solve_sudoku_CSP(sudoku,k):
 
-    #TODO: add a propagation strategy
-
     model = cp_model.CpModel()
     vars = []
     num_rows = num_cols = num_values = k ** 2
 
-    # New approach: binary approach, i.e., make binary variables s_rcv = I{entry_rc == v}
+    # binary approach, i.e., make binary variables s_rcv = I{entry_rc == v}
     for row in range(num_rows):
         row_vars = []
 
@@ -245,19 +227,87 @@ def solve_sudoku_CSP(sudoku,k):
                         if solver.Value(vars[row][col][value_index]) == 1:
                             sudoku[row][col] = value_index + 1
 
-
-
-
-
-
-
     return sudoku
 
 ###
 ### Solver that uses ASP encoding
 ###
 def solve_sudoku_ASP(sudoku,k):
-    return None;
+
+    # empty string to be filled with answer set program
+    asp_code = ""
+
+    asp_code += """
+        #const k={}.
+        #const km={}.
+        #const kk={}.
+        cell_index(0..km).
+        cell_value(1..kk).
+    """.format(k, (k**2) - 1, k ** 2)
+
+    num_rows = num_cols = num_values = k ** 2
+
+    # create atoms for given entries and their corresponding values
+    for row in range(num_rows):
+        for col in range(num_cols):
+            for value in range(1, num_values + 1):
+                if sudoku[row][col] != 0:
+                    if sudoku[row][col] == value:
+                        asp_code += """
+                            given_cell({}, {}, {}).
+                        """.format(row, col, value)
+
+
+    asp_code += """
+        given_cell(I, J) :- given_cell(I, J, _).
+    """
+
+    # make remaining cells empty cell types and fill sudoku_value with corresponding given values
+    asp_code += """
+        empty(I, J) :- cell_index(I), cell_index(J), not given_cell(I, J).
+        sudoku_value(I, J, V) :- given_cell(I, J, V).
+    """
+
+    # every cell must be filled with exactly one value
+    asp_code += """
+        1 { sudoku_value(I, J, V) : cell_value(V) } 1 :- empty(I, J).
+    """
+
+    # row, col and block constraints
+    asp_code += """
+        sq_index(I, N) :- cell_index(I), M = I / k, N = M * k.
+        same_sq(I, I1) :- cell_index(I), cell_index(I1), sq_index(I, IS), sq_index(I1, IS).
+        :- cell_index(I), sudoku_value(I, J, V), sudoku_value(I, J1, V), J != J1.
+        :- cell_index(J), sudoku_value(I, J, V), sudoku_value(I1, J, V), I != I1.
+        :- same_sq(I, I1), same_sq(J, J1), I != I1, sudoku_value(I, J, V), sudoku_value(I1, J1, V).
+        :- same_sq(I, I1), same_sq(J, J1), J != J1, sudoku_value(I, J, V), sudoku_value(I1, J1, V).
+    """
+
+    # show statement indicating we are only interested in sudoku values if printed
+    asp_code += """
+        #show sudoku_value/3.
+    """
+
+    control = clingo.Control()
+    control.add("base", [], asp_code)
+    control.ground([("base", [])])
+
+    def on_model(model):
+        for atom in model.symbols(atoms = True):
+            if atom.name == "sudoku_value":
+                if sudoku[atom.arguments[0].number][atom.arguments[1].number] == 0:
+                    sudoku[atom.arguments[0].number][atom.arguments[1].number] = atom.arguments[2].number
+
+    # ask clingo to find a single model for program (necessary for empty input)
+    control.configuration.solve.models = 1
+    answer = control.solve(on_model=on_model)
+
+    if answer.satisfiable == True:
+        print("Found solution")
+    else:
+        print("Did not find solution");
+
+    return sudoku
 
 ###
 ### Solver that uses ILP encoding
