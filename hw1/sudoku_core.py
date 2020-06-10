@@ -257,35 +257,34 @@ def solve_sudoku_ASP(sudoku,k):
                             given_cell({}, {}, {}).
                         """.format(row, col, value)
 
-
+    # make remaining cells empty cell types and fill sudoku entries with corresponding given values
     asp_code += """
-        given_cell(I, J) :- given_cell(I, J, _).
+        empty_cell(R, C) :- cell_index(R), cell_index(C), not given_cell(R, C).
+        sudoku(R, C, V) :- given_cell(R, C, V).
     """
 
-    # make remaining cells empty cell types and fill sudoku_value with corresponding given values
+    # enforce every cell must be filled with exactly one value, by using a
+    # cardinality rule, expressing the set of permitted values using
+    # conditonial literals
     asp_code += """
-        empty(I, J) :- cell_index(I), cell_index(J), not given_cell(I, J).
-        sudoku_value(I, J, V) :- given_cell(I, J, V).
+        1 { sudoku(R, C, V) : cell_value(V) } 1 :- empty_cell(R, C).
     """
 
-    # every cell must be filled with exactly one value
+    # row, col, and block constraints respectively
     asp_code += """
-        1 { sudoku_value(I, J, V) : cell_value(V) } 1 :- empty(I, J).
+        :- cell_index(R), sudoku(R, C, V), sudoku(R, C1, V), C != C1.
+        :- cell_index(C), sudoku(R, C, V), sudoku(R1, C, V), R != R1.
     """
-
-    # row, col and block constraints
     asp_code += """
-        sq_index(I, N) :- cell_index(I), M = I / k, N = M * k.
-        same_sq(I, I1) :- cell_index(I), cell_index(I1), sq_index(I, IS), sq_index(I1, IS).
-        :- cell_index(I), sudoku_value(I, J, V), sudoku_value(I, J1, V), J != J1.
-        :- cell_index(J), sudoku_value(I, J, V), sudoku_value(I1, J, V), I != I1.
-        :- same_sq(I, I1), same_sq(J, J1), I != I1, sudoku_value(I, J, V), sudoku_value(I1, J1, V).
-        :- same_sq(I, I1), same_sq(J, J1), J != J1, sudoku_value(I, J, V), sudoku_value(I1, J1, V).
+        block_index(R, N) :- cell_index(R), M = R / k, N = M * k.
+        same_block(R, R1) :- cell_index(R), cell_index(R1), block_index(R, RS), block_index(R1, RS).
+        :- same_block(R, R1), same_block(C, C1), R != R1, sudoku(R, C, V), sudoku(R1, C1, V).
+        :- same_block(R, R1), same_block(C, C1), C != C1, sudoku(R, C, V), sudoku(R1, C1, V).
     """
 
     # show statement indicating we are only interested in sudoku values if printed
     asp_code += """
-        #show sudoku_value/3.
+        #show sudoku/3.
     """
 
     control = clingo.Control()
@@ -294,7 +293,7 @@ def solve_sudoku_ASP(sudoku,k):
 
     def on_model(model):
         for atom in model.symbols(atoms = True):
-            if atom.name == "sudoku_value":
+            if atom.name == "sudoku":
                 if sudoku[atom.arguments[0].number][atom.arguments[1].number] == 0:
                     sudoku[atom.arguments[0].number][atom.arguments[1].number] = atom.arguments[2].number
 
