@@ -229,14 +229,25 @@ def solve_planning_problem_using_ASP(planning_problem,t_max):
     print("#"*81)
     print(asp_code)
 
-    print_answer_sets(asp_code)
-    pdb.set_trace()
+    # ## Phase 4) optimize using clingo
+    # print_answer_sets(asp_code)
+    # # pdb.set_trace()
+    #
+    # #### TESTING: Lets see what this here function really do be like
+    #
+    # plan1 = [expr('LeftSock'), expr('RightSock'), expr('LeftShoe'), expr('RightShoe')]
+    # plan2 = [expr('LeftSock'), expr('LeftShoe'), expr('RightSock'), expr('RightShoe')]
+    # plan3 = [expr('RightSock'), expr('RightShoe'), expr('LeftSock'), expr('LeftShoe')]
+    # plan4 = [expr('RightSock'), expr('LeftSock'), expr('LeftShoe'), expr('RightShoe')]
+    #
+    # ## Phase 5) Decode back into planning problem language and return solution
 
+    plan = asp_to_plan(asp_code, actions)
 
-    plan = [expr('LeftSock'), expr('RightSock'), expr('LeftShoe'), expr('RightShoe')]
     return plan
 
-# Taken from KRR-course GitHub repo example: https://github.com/rdehaan/KRR-course/blob/master/examples/guide-to-asp.ipynb
+# Original function Taken from KRR-course GitHub repo example: https://github.com/rdehaan/KRR-course/blob/master/examples/guide-to-asp.ipynb
+# Adapted such that it returns the answer sets, with optional print
 def print_answer_sets(program):
     """
     Gives us the answer sets of a given answer set program, and display the atoms in the answer set sorted alphabetically.
@@ -253,9 +264,59 @@ def print_answer_sets(program):
         sorted_model.sort();
         print("Answer set: {{{}}}".format(", ".join(sorted_model)));
     # Ask clingo to find all models (using an upper bound of 0 gives all models)
-    control.configuration.solve.models = 0;
+    control.configuration.solve.models = 1;
     # Call the clingo solver, passing on the function on_model for when an answer set is found
     answer = control.solve(on_model=on_model)
     # Print a message when no answer set was found
     if answer.satisfiable == False:
         print("No answer sets");
+
+# Define a function that will be called when an answer set is found
+# This function sorts the answer set alphabetically, and prints it
+def on_model(model, print = False):
+    sorted_model = [str(atom) for atom in model.symbols(shown=True)];
+    sorted_model.sort();
+    print("Answer set: {{{}}}".format(", ".join(sorted_model)));
+
+def asp_to_plan(program, actions_list, print_as = False):
+    """
+    Takes answer set program and list of possible actions in planning problem,
+    solves program and returns plan as list of action expressions.
+    Based on print_answer_sets(), from: https://github.com/rdehaan/KRR-course/blob/master/examples/guide-to-asp.ipynb
+    """
+
+    # Load the answer set program, and call the grounder
+    control = clingo.Control();
+    control.add("base", [], program); # asp_code = program
+    control.ground([("base", [])]);
+
+    # Define a function that will be called when an answer set is found
+    # This function sorts the answer set alphabetically, and prints it
+    sorted_models = []
+    def on_model(model):
+        sorted_model = [str(atom) for atom in model.symbols(shown=True)];
+        sorted_model.sort();
+        sorted_models.append(sorted_model)
+        if print_as: print("Answer Sset: {{{}}}".format(", ".join(sorted_model)))
+    # Ask clingo to find all models (using an upper bound of 0 gives all models)
+    control.configuration.solve.models = 0;
+    # Call the clingo solver, passing on the function on_model for when an answer set is found
+    answer = control.solve(on_model=on_model)
+
+    # Print a message when no answer set was found
+    if answer.satisfiable == False:
+        print("No answer sets");
+
+    # empty list to be filled with actions expressions
+    plan = []
+
+    # iterate over action predicates from (the first of the optimal) model(s),
+    # find action index, and append relevant action to plan
+    #TODO: this now arbitrarily takes the first of the optimal models, does this
+    # have any consequences?
+    for asp_action_string in sorted_models[0]:
+        action_plan_idx = int(asp_action_string[-2])
+        action_plan_string = str(actions_list[action_plan_idx])
+        plan.append(expr(action_plan_string))
+
+    return plan
